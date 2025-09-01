@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db } from "../lib/firebaseAdmin"; // ← lib/firebaseAdmin.ts 에서 admin 초기화한 거 가져오기
+import { db } from "./_shared/firebaseAdmin";
 
 type NaverMeResponse = {
   resultcode: string;
