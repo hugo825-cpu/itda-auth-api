@@ -1,5 +1,19 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db } from "./_shared/firebaseAdmin";
+import * as admin from "firebase-admin";
+
+// ─────────────────────────────────────────────────────────────
+// Firebase Admin 초기화 (중복 초기화 방지)
+// ─────────────────────────────────────────────────────────────
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID || "aid-community-3dda6", // 필요시 고정값
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+    }),
+  });
+}
+const db = admin.firestore();
 
 type NaverMeResponse = {
   resultcode: string;
@@ -11,9 +25,9 @@ type NaverMeResponse = {
     name?: string;
     profile_image?: string;
     gender?: string;
-    age?: string;       // 예: "20-29"
-    birthday?: string;  // MM-DD
-    birthyear?: string; // YYYY
+    age?: string;       // "20-29"
+    birthday?: string;  // "MM-DD"
+    birthyear?: string; // "YYYY"
     mobile?: string;
   };
 };
@@ -22,12 +36,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
 
   try {
-    // 1) JSON Body 파싱
+    // 1) JSON Body 파싱 (서버리스 안전)
     const body = await readJsonBody(req);
     const accessToken: string | undefined = body?.accessToken;
     if (!accessToken) return res.status(400).json({ error: "accessToken missing" });
 
-    // 2) 네이버 프로필 조회
+    // 2) 네이버 프로필 조회로 토큰 검증
     const me = await getNaverProfile(accessToken);
     if (me.resultcode !== "00" || !me.response?.id) {
       return res.status(401).json({ error: "Invalid Naver access token", detail: me });
@@ -36,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const nav = me.response;
     const naverId = nav.id;
 
-    // 3) Firestore 저장 (users/naver:{id})
+    // 3) Firestore upsert
     const userRef = db.collection("users").doc(`naver:${naverId}`);
     const snap = await userRef.get();
     const now = new Date().toISOString();
@@ -60,7 +74,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       { merge: true }
     );
 
-    // 4) 응답
     return res.status(200).json({
       ok: true,
       uid: `naver:${naverId}`,
@@ -77,7 +90,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-/** Request Body JSON 안전 파싱 */
+// ─────────────────────────────────────────────────────────────
+// helpers
+// ─────────────────────────────────────────────────────────────
 async function readJsonBody(req: VercelRequest): Promise<any> {
   if (typeof req.body === "object" && req.body !== null) return req.body;
   const chunks: Uint8Array[] = [];
@@ -89,7 +104,6 @@ async function readJsonBody(req: VercelRequest): Promise<any> {
   return JSON.parse(raw);
 }
 
-/** 네이버 프로필 조회 */
 async function getNaverProfile(accessToken: string): Promise<NaverMeResponse> {
   const r = await fetch("https://openapi.naver.com/v1/nid/me", {
     method: "GET",
