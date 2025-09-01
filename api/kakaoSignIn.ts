@@ -1,5 +1,6 @@
+// api/kakaoSignIn.ts
+import admin, { db, auth } from "./_shared/firebaseAdmin";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { admin, db } from "./_shared/firebaseAdmin"; // firebase-admin 초기화 모듈 (admin, db 둘 다 export 했다고 가정)
 
 // ✅ 카카오 사용자 정보 타입
 type KakaoUserResponse = {

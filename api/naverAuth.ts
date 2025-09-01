@@ -3,7 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { auth, db } from '../_shared/firebaseAdmin';
 
 // (선택) Node 런타임 고정
-export const config = { runtime: 'nodejs18.x' };
+export const config = { runtime: 'nodejs' };
 
 type NaverMeResponse = {
   resultcode: string;
