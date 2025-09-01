@@ -1,52 +1,66 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import fetch from 'node-fetch';
 import * as admin from 'firebase-admin';
+import fetch from 'node-fetch';
 
-const app = admin.apps.length
-  ? admin.app()
-  : admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-      }),
-    });
+// Firebase Admin 초기화 (환경변수 사용)
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }),
+  });
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   try {
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method Not Allowed' });
-    }
-
-    const { accessToken } = req.body || {};
+    const { accessToken } = req.body as { accessToken?: string };
     if (!accessToken) {
-      return res.status(400).json({ error: 'missing accessToken' });
+      return res.status(400).json({ error: 'Missing accessToken' });
     }
 
-    // 1) 네이버 프로필 조회
-    //   doc: https://developers.naver.com/docs/login/profile/profile.md
-    const meResp = await fetch('https://openapi.naver.com/v1/nid/me', {
+    // 네이버 사용자 정보 요청
+    const response = await fetch('https://openapi.naver.com/v1/nid/me', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    const meJson: any = await meResp.json();
-    if (!meResp.ok || meJson?.resultcode !== '00') {
-      return res.status(401).json({ error: 'naver token invalid', detail: meJson });
+    const data = await response.json();
+    if (!data.response) {
+      return res.status(400).json({ error: 'Failed to fetch Naver user info', details: data });
     }
 
-    const naverId = meJson?.response?.id;
-    if (!naverId) {
-      return res.status(500).json({ error: 'naver id missing', raw: meJson });
-    }
+    const { id, email, name } = data.response;
 
-    // 2) Firebase custom token 발급
-    const uid = `naver:${naverId}`;
-    const customToken = await app.auth().createCustomToken(uid, {
-      provider: 'naver',
+    // Firebase UID 생성
+    const uid = `naver:${id}`;
+
+    // Firebase 사용자 생성/업데이트
+    await admin.auth().updateUser(uid, {
+      email: email || undefined,
+      displayName: name || undefined,
+    }).catch(async (err) => {
+      if (err.code === 'auth/user-not-found') {
+        await admin.auth().createUser({
+          uid,
+          email: email || undefined,
+          displayName: name || undefined,
+        });
+      } else {
+        throw err;
+      }
     });
 
+    // Firebase Custom Token 발급
+    const customToken = await admin.auth().createCustomToken(uid);
+
     return res.status(200).json({ customToken });
-  } catch (e: any) {
-    return res.status(500).json({ error: e?.message || String(e) });
+  } catch (err: any) {
+    console.error('[NaverAuth ERROR]', err);
+    return res.status(500).json({ error: 'Internal server error', details: err.message });
   }
-}
+}}
