@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import * as admin from "firebase-admin";
+import { db } from "./_shared/firebaseAdmin";
 
 // Firebase Admin 초기화 (중복 방지)
 if (!admin.apps.length) {
