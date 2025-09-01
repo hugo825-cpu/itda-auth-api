@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "api/naverAuth.ts": {
+      "runtime": "nodejs18.x",
+      "includeFiles": "lib/**"
+    }
+  }
+}
