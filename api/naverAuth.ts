@@ -1,17 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db } from "./_shared/firebaseAdmin";
-
-// Firebase Admin 초기화 (중복 방지)
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID || "aid-community-3dda6",
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    }),
-  });
-}
-const db = admin.firestore();
+import { db } from "./_shared/firebaseAdmin";  // ✅ admin 대신 db만 import
 
 type NaverMeResponse = {
   resultcode: string;
@@ -31,13 +19,19 @@ type NaverMeResponse = {
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
 
   try {
+    // 1) Request Body 파싱
     const body = await readJsonBody(req);
     const accessToken: string | undefined = body?.accessToken;
-    if (!accessToken) return res.status(400).json({ error: "accessToken missing" });
+    if (!accessToken) {
+      return res.status(400).json({ error: "accessToken missing" });
+    }
 
+    // 2) 네이버 프로필 조회
     const me = await getNaverProfile(accessToken);
     if (me.resultcode !== "00" || !me.response?.id) {
       return res.status(401).json({ error: "Invalid Naver access token", detail: me });
@@ -46,6 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const nav = me.response;
     const naverId = nav.id;
 
+    // 3) Firestore에 저장
     const userRef = db.collection("users").doc(`naver:${naverId}`);
     const snap = await userRef.get();
     const now = new Date().toISOString();
@@ -69,6 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       { merge: true }
     );
 
+    // 4) 응답
     return res.status(200).json({
       ok: true,
       uid: `naver:${naverId}`,
@@ -78,8 +74,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         nickname: nav.nickname ?? null,
         profileImage: nav.profile_image ?? null,
       },
-      // 디버깅용 배포 식별자
-      vercelCommit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     });
   } catch (e: any) {
     console.error(e);
@@ -87,7 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-// helpers
+/** Request Body JSON 파싱 */
 async function readJsonBody(req: VercelRequest): Promise<any> {
   if (typeof req.body === "object" && req.body !== null) return req.body;
   const chunks: Uint8Array[] = [];
@@ -99,6 +93,7 @@ async function readJsonBody(req: VercelRequest): Promise<any> {
   return JSON.parse(raw);
 }
 
+/** 네이버 프로필 조회 */
 async function getNaverProfile(accessToken: string): Promise<NaverMeResponse> {
   const r = await fetch("https://openapi.naver.com/v1/nid/me", {
     method: "GET",
@@ -106,4 +101,3 @@ async function getNaverProfile(accessToken: string): Promise<NaverMeResponse> {
   });
   return (await r.json()) as NaverMeResponse;
 }
-EOF
